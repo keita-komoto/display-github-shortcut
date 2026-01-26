@@ -9,13 +9,8 @@ interface ChromeStorageNamespace {
   local?: ChromeStorageArea
 }
 
-interface ChromeRuntimeNamespace {
-  sendMessage?: (message: unknown) => void
-}
-
 interface ChromeLike {
   storage?: ChromeStorageNamespace
-  runtime?: ChromeRuntimeNamespace
 }
 
 const chromeLike = (): ChromeLike => {
@@ -49,7 +44,6 @@ const writeEnabled = async (value: boolean): Promise<void> => {
         resolve()
       })
     })
-    chrome.runtime?.sendMessage?.({ type: 'ghsk-toggle', enabled: value })
     return
   }
   if (typeof localStorage !== 'undefined') {
