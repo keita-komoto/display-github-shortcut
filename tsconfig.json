@@ -18,5 +18,5 @@
     "types": ["vitest"]
   },
   "include": ["*.d.ts", "**/*.ts", "**/*.tsx", "**/*.mts", ".next/types/**/*.ts", "**/*.js", "**/*.jsx", "**/*.mjs"],
-  "exclude": ["node_modules", "commitlint.config.*"]
+  "exclude": ["node_modules", "commitlint.config.*", "apps/**"]
 }

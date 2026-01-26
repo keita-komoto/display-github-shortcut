@@ -7,3 +7,6 @@ cd "$SCRIPT_DIR"
 pnpm tsc
 pnpm lint
 pnpm test
+pnpm --filter github-shortcut-badges run typecheck
+pnpm --filter github-shortcut-badges run test
+pnpm --filter github-shortcut-badges run build

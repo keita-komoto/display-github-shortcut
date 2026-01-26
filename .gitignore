@@ -1,3 +1,6 @@
 /node_modules
+/apps/*/node_modules
 
 tsconfig.tsbuildinfo
+/apps/github-shortcut-badges/dist
+/.pnpm-store

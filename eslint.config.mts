@@ -3,7 +3,7 @@ import { defineConfig } from 'eslint/config'
 import tseslint from 'typescript-eslint'
 
 export default defineConfig(
-  { ignores: ['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'commitlint.config.js'] },
+  { ignores: ['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'commitlint.config.js', 'apps/**/dist/**', 'apps/github-shortcut-badges/vitest.config.ts'] },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
