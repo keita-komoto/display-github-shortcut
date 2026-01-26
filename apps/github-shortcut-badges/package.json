@@ -7,7 +7,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build:static": "mkdir -p dist && cp -R src/public/* dist/",
-    "build:js": "esbuild src/contentScript.ts --bundle --sourcemap --format=iife --target=es2022 --outfile=dist/contentScript.js && esbuild src/options/options.ts --bundle --sourcemap --format=iife --target=es2022 --outfile=dist/options.js",
+    "build:js": "esbuild src/contentScript.ts --bundle --sourcemap --format=iife --target=es2022 --outfile=dist/contentScript.js && esbuild src/options/options.ts --bundle --sourcemap --format=iife --target=es2022 --outfile=dist/options.js && esbuild src/popup/popup.ts --bundle --sourcemap --format=iife --target=es2022 --outfile=dist/popup.js",
     "build": "pnpm run clean && pnpm run build:static && pnpm run build:js"
   },
   "devDependencies": {

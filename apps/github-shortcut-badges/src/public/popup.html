@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>GitHub Shortcut Badges</title>
+    <style>
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 12px; color: #111; min-width: 220px; }
+      h1 { font-size: 14px; margin: 0 0 8px; }
+      .switch { display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; user-select: none; }
+      .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+      .slider { position: relative; width: 42px; height: 22px; background: #d1d5db; border-radius: 11px; transition: background 0.2s ease; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); }
+      .slider::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: transform 0.2s ease; }
+      input:checked + .slider { background: #2563eb; }
+      input:checked + .slider::after { transform: translateX(7px); }
+      input:focus-visible + .slider { outline: 2px solid #2563eb; outline-offset: 2px; }
+      .switch-label { line-height: 1.4; }
+      .hint { color: #555; font-size: 12px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Shortcut Badges</h1>
+    <label class="switch">
+      <input id="toggle" type="checkbox" aria-label="Enable badges" />
+      <span class="slider" aria-hidden="true"></span>
+      <span class="switch-label">Enable badges (Cmd+Ctrl+B / Ctrl+Alt+B)</span>
+    </label>
+    <div class="hint">Toggle here or with the global hotkey. State is shared across tabs.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

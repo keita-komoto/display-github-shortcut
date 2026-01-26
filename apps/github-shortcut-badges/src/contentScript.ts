@@ -11,6 +11,15 @@ interface ChromeStorageArea {
   set: (items: Record<string, unknown>, callback: () => void) => void
 }
 
+interface ChromeStorageEvents {
+  addListener: (callback: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void) => void
+}
+
+interface ChromeStorageNamespace {
+  local?: ChromeStorageArea
+  onChanged?: ChromeStorageEvents
+}
+
 const storageKey = 'ghskEnabled'
 
 const detectPlatform = (): Platform => {
@@ -21,25 +30,21 @@ const detectPlatform = (): Platform => {
   return source.includes('mac') ? 'mac' : source.includes('win') ? 'windows' : 'linux'
 }
 
-const chromeStorage = (): ChromeStorageArea | null => {
-  const maybeGlobal = globalThis as { chrome?: { storage?: { local?: ChromeStorageArea } } }
+const chromeStorage = (): { storage?: ChromeStorageNamespace } | null => {
+  const maybeGlobal = globalThis as { chrome?: { storage?: ChromeStorageNamespace } }
   const maybeChrome = maybeGlobal.chrome
   if (typeof maybeChrome === 'undefined') {
     return null
   }
-  const storage = maybeChrome.storage
-  if (typeof storage === 'undefined') {
-    return null
-  }
-  const local = storage.local
-  return typeof local === 'undefined' ? null : local
+  return maybeChrome
 }
 
 const readEnabled = async (): Promise<boolean> => {
   const storage = chromeStorage()
-  if (storage !== null) {
+  const local = storage?.storage?.local
+  if (local !== undefined) {
     return await new Promise((resolve) => {
-      storage.get({ [storageKey]: true }, (items) => {
+      local.get({ [storageKey]: true }, (items) => {
         const value = items[storageKey]
         resolve(Boolean(value ?? true))
       })
@@ -54,9 +59,10 @@ const readEnabled = async (): Promise<boolean> => {
 
 const writeEnabled = async (value: boolean): Promise<void> => {
   const storage = chromeStorage()
-  if (storage !== null) {
+  const local = storage?.storage?.local
+  if (local !== undefined) {
     await new Promise<void>((resolve) => {
-      storage.set({ [storageKey]: value }, () => {
+      local.set({ [storageKey]: value }, () => {
         resolve()
       })
     })
@@ -100,12 +106,32 @@ const applyEnabled = (enabled: boolean, platform: Platform): void => {
   }
 }
 
+const registerStorageSync = (platform: Platform): void => {
+  const storage = chromeStorage()
+  const onChanged = storage?.storage?.onChanged
+  if (onChanged === undefined) {
+    return
+  }
+  onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') {
+      return
+    }
+    const next = changes[storageKey]
+    if (typeof next === 'undefined') {
+      return
+    }
+    const enabled = Boolean(next.newValue ?? true)
+    applyEnabled(enabled, platform)
+  })
+}
+
 const main = async (): Promise<void> => {
   console.debug('[ghsk] contentScript loaded')
   const platform = detectPlatform()
   const initialEnabled = await readEnabled()
   applyEnabled(initialEnabled, platform)
   observeMutations(platform)
+  registerStorageSync(platform)
   window.addEventListener('keydown', (event) => {
     const shouldToggle = isToggleHotkey(event, platform)
     if (!shouldToggle) {
