@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GitHub Shortcut Badges",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "permissions": ["storage"],
   "host_permissions": ["https://github.com/*"],
   "content_scripts": [
