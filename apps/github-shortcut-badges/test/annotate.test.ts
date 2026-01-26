@@ -99,4 +99,14 @@ describe('annotateDocument', () => {
     const badge = target?.querySelector('.ghsk-badge')
     expect(badge?.textContent).toBe('L')
   })
+
+  it('data-ghsk-enabled="0" のときは注釈しない', () => {
+    const doc = buildDocument('<a data-hotkey="g c">Issues</a>')
+    doc.documentElement.setAttribute('data-ghsk-enabled', '0')
+
+    annotateDocument(doc, settings)
+
+    expect(doc.querySelector('.ghsk-badge')).toBeNull()
+    expect(doc.querySelector('[data-ghsk-popup]')).toBeNull()
+  })
 })

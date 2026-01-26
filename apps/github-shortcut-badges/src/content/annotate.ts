@@ -124,6 +124,10 @@ const annotateElement = (element: Element, doc: Document, options: HotkeyFormatO
 }
 
 export const annotateDocument = (doc: Document, settings: AnnotationSettings): void => {
+  const disabled = doc.documentElement.getAttribute('data-ghsk-enabled') === '0'
+  if (disabled) {
+    return
+  }
   const targets = Array.from(
     doc.querySelectorAll(
       `[${hotkeyAttribute}], [${ariaShortcutAttribute}], a[href*="/issues/new"], button`

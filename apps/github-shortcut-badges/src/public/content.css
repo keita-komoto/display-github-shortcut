@@ -3,11 +3,11 @@
   overflow: visible !important;
 }
 
-[data-ghsk-popup]:not([data-tooltip]) {
+html:not([data-ghsk-enabled="0"]) [data-ghsk-popup]:not([data-tooltip]) {
   position: relative;
 }
 
-[data-ghsk-popup]:not([data-tooltip]):hover::after {
+html:not([data-ghsk-enabled="0"]) [data-ghsk-popup]:not([data-tooltip]):hover::after {
   content: attr(data-ghsk-popup);
   position: absolute;
   top: 100%;
@@ -53,4 +53,12 @@
   border: 1px solid rgba(255, 255, 255, 0.94);
   border-radius: 5px;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+html[data-ghsk-enabled="0"] .ghsk-badge {
+  display: none !important;
+}
+
+html[data-ghsk-enabled="0"] [data-ghsk-popup]:not([data-tooltip])::after {
+  display: none !important;
 }
