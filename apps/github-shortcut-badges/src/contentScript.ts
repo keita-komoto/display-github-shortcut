@@ -1,93 +1,46 @@
-import { annotateDocument } from './content/annotate'
-import { type Platform } from './shared/hotkeyFormat'
+import { annotateDocument, annotateWithin } from './content/annotate'
+import { loadEnabled, saveEnabled, subscribeEnabled } from './shared/enabled'
+import { detectPlatform, loadSettings, resolvePlatform, subscribeSettings, type ResolvedSettings, type Settings } from './shared/settings'
+import type { Platform } from './shared/hotkeyFormat'
 
-interface NavigatorLike {
-  userAgentData?: { platform?: string }
-  userAgent?: string
+interface RuntimeState {
+  settings: ResolvedSettings
+  enabled: boolean
+  observer: MutationObserver | null
+  enqueue: (roots: Element[]) => void
+  pending: Set<Element>
 }
 
-interface ChromeStorageArea {
-  get: (items: Record<string, unknown>, callback: (items: Record<string, unknown>) => void) => void
-  set: (items: Record<string, unknown>, callback: () => void) => void
-}
+const observerOptions: MutationObserverInit = { childList: true, subtree: true }
 
-interface ChromeStorageEvents {
-  addListener: (callback: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void) => void
-}
-
-interface ChromeStorageNamespace {
-  local?: ChromeStorageArea
-  onChanged?: ChromeStorageEvents
-}
-
-const storageKey = 'ghskEnabled'
-
-const detectPlatform = (): Platform => {
-  const nav: NavigatorLike | null = typeof navigator === 'undefined' ? null : navigator
-  const uaPlatform = nav?.userAgentData?.platform ?? ''
-  const fallback = nav?.userAgent ?? ''
-  const source = (uaPlatform.length > 0 ? uaPlatform : fallback).toLowerCase()
-  return source.includes('mac') ? 'mac' : source.includes('win') ? 'windows' : 'linux'
-}
-
-const chromeStorage = (): { storage?: ChromeStorageNamespace } | null => {
-  const maybeGlobal = globalThis as { chrome?: { storage?: ChromeStorageNamespace } }
-  const maybeChrome = maybeGlobal.chrome
-  if (typeof maybeChrome === 'undefined') {
-    return null
-  }
-  return maybeChrome
-}
-
-const readEnabled = async (): Promise<boolean> => {
-  const storage = chromeStorage()
-  const local = storage?.storage?.local
-  if (local !== undefined) {
-    return await new Promise((resolve) => {
-      local.get({ [storageKey]: true }, (items) => {
-        const value = items[storageKey]
-        resolve(Boolean(value ?? true))
-      })
-    })
-  }
-  if (typeof localStorage === 'undefined') {
-    return true
-  }
-  const stored = localStorage.getItem(storageKey)
-  return stored === null ? true : stored !== '0' && stored !== 'false'
-}
-
-const writeEnabled = async (value: boolean): Promise<void> => {
-  const storage = chromeStorage()
-  const local = storage?.storage?.local
-  if (local !== undefined) {
-    await new Promise<void>((resolve) => {
-      local.set({ [storageKey]: value }, () => {
-        resolve()
-      })
-    })
-    return
-  }
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(storageKey, value ? '1' : '0')
-  }
-}
-
-const runAnnotation = (platform: Platform): void => {
-  const settings = { platform, showAllAlternatives: false }
-  annotateDocument(document, settings)
-}
-
-const observeMutations = (platform: Platform): void => {
-  const observer = new MutationObserver((records) => {
-    const addedElements = records.flatMap((record) => Array.from(record.addedNodes))
-      .filter((node) => node.nodeType === Node.ELEMENT_NODE)
-    const isDisabled = document.documentElement.getAttribute('data-ghsk-enabled') === '0'
-    if (addedElements.length > 0 && !isDisabled) {
-      runAnnotation(platform)
+const createDebounced = <T extends unknown[]>(fn: (...args: T) => void, delay = 40): ((...args: T) => void) => {
+  let handle: ReturnType<typeof setTimeout> | undefined
+  return (...args: T): void => {
+    switch (typeof handle === 'undefined') {
+    case false: {
+      clearTimeout(handle)
+      handle = undefined
+      break
     }
-  })
-  observer.observe(document.documentElement, { childList: true, subtree: true })
+    default:
+      break
+    }
+    handle = setTimeout(() => {
+      handle = undefined
+      fn(...args)
+    }, delay)
+  }
+}
+
+const resolved = (settings: Settings, detected: Platform): ResolvedSettings => ({
+  ...settings,
+  platform: resolvePlatform(settings.platformPreference, detected)
+})
+
+const applyEnabled = (state: RuntimeState, enabled: boolean): void => {
+  state.enabled = enabled
+  document.documentElement.setAttribute('data-ghsk-enabled', enabled ? '1' : '0')
+  annotateDocument(document, state.settings)
 }
 
 const isToggleHotkey = (event: KeyboardEvent, platform: Platform): boolean => {
@@ -99,49 +52,87 @@ const isToggleHotkey = (event: KeyboardEvent, platform: Platform): boolean => {
   return modifierMatch && key === 'b'
 }
 
-const applyEnabled = (enabled: boolean, platform: Platform): void => {
-  document.documentElement.setAttribute('data-ghsk-enabled', enabled ? '1' : '0')
-  if (enabled) {
-    runAnnotation(platform)
-  }
+const handleToggle = (state: RuntimeState, event: KeyboardEvent): void => {
+  event.preventDefault()
+  const nextEnabled = !state.enabled
+  applyEnabled(state, nextEnabled)
+  void saveEnabled(nextEnabled)
 }
 
-const registerStorageSync = (platform: Platform): void => {
-  const storage = chromeStorage()
-  const onChanged = storage?.storage?.onChanged
-  if (onChanged === undefined) {
-    return
-  }
-  onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local') {
-      return
+const observeMutations = (state: RuntimeState): void => {
+  const observer = new MutationObserver((records) => {
+    const elements = records
+      .flatMap((record) => Array.from(record.addedNodes))
+      .filter((node): node is Element => node.nodeType === Node.ELEMENT_NODE)
+    const relevant = elements.filter(
+      (element) =>
+        element.closest('[data-ghsk-annotated="1"]') === null && element.closest('.ghsk-badge') === null
+    )
+    relevant.forEach((element) => state.pending.add(element))
+    const roots = Array.from(state.pending)
+    state.pending.clear()
+    switch (state.enabled && roots.length > 0) {
+    case true:
+      state.enqueue(roots)
+      break
+    default:
+      break
     }
-    const next = changes[storageKey]
-    if (typeof next === 'undefined') {
-      return
-    }
-    const enabled = Boolean(next.newValue ?? true)
-    applyEnabled(enabled, platform)
+  })
+  observer.observe(document.documentElement, observerOptions)
+  state.observer = observer
+}
+
+const registerStorageSync = (state: RuntimeState, detected: Platform): void => {
+  subscribeEnabled((next) => {
+    applyEnabled(state, next)
+  })
+  subscribeSettings((next) => {
+    state.settings = resolved(next, detected)
+    annotateDocument(document, state.settings)
   })
 }
 
-const main = async (): Promise<void> => {
-  console.debug('[ghsk] contentScript loaded')
-  const platform = detectPlatform()
-  const initialEnabled = await readEnabled()
-  applyEnabled(initialEnabled, platform)
-  observeMutations(platform)
-  registerStorageSync(platform)
+const setupHotkey = (state: RuntimeState): void => {
   window.addEventListener('keydown', (event) => {
-    const shouldToggle = isToggleHotkey(event, platform)
-    if (!shouldToggle) {
-      return
+    switch (isToggleHotkey(event, state.settings.platform)) {
+    case true:
+      handleToggle(state, event)
+      break
+    default:
+      break
     }
-    event.preventDefault()
-    const nextEnabled = document.documentElement.getAttribute('data-ghsk-enabled') === '0'
-    applyEnabled(nextEnabled, platform)
-    void writeEnabled(nextEnabled)
   })
 }
 
-void main()
+const bindNavigation = (state: RuntimeState): void => {
+  const rerun = (): void => {
+    if (state.enabled) {
+      annotateDocument(document, state.settings)
+    }
+  }
+  ;['pjax:end', 'turbo:render', 'turbo:load', 'turbo:frame-load', 'visibilitychange'].forEach((eventName) => {
+    document.addEventListener(eventName, rerun)
+  })
+}
+
+const bootstrap = async (): Promise<void> => {
+  const detected = detectPlatform()
+  const baseSettings = await loadSettings()
+  const initialSettings = resolved(baseSettings, detected)
+  const enabled = await loadEnabled()
+  const state: RuntimeState = { settings: initialSettings, enabled, observer: null, enqueue: (): void => undefined, pending: new Set<Element>() }
+  state.enqueue = createDebounced((roots: Element[]) => {
+    state.observer?.disconnect()
+    annotateWithin(document, state.settings, roots)
+    state.pending.clear()
+    state.observer?.observe(document.documentElement, observerOptions)
+  })
+  applyEnabled(state, enabled)
+  observeMutations(state)
+  registerStorageSync(state, detected)
+  setupHotkey(state)
+  bindNavigation(state)
+}
+
+void bootstrap()
