@@ -4,3 +4,5 @@
 tsconfig.tsbuildinfo
 /apps/github-shortcut-badges/dist
 /.pnpm-store
+
+.DS_store
