@@ -1,9 +1,5 @@
-import { formatHotkey, type HotkeyFormatOptions, type Platform } from '../shared/hotkeyFormat'
-
-interface AnnotationSettings {
-  platform: Platform
-  showAllAlternatives: boolean
-}
+import { formatHotkey, type HotkeyFormatOptions } from '../shared/hotkeyFormat'
+import type { ResolvedSettings } from '../shared/settings'
 
 const markerAttribute = 'data-ghsk-annotated'
 const hotkeyAttribute = 'data-hotkey'
@@ -41,17 +37,26 @@ const resolveNewIssueHotkey = (element: Element): string => {
 }
 
 const resolveFilterHotkey = (element: Element): string => {
-  const label = element.textContent.trim().toLowerCase()
+  const candidates = [
+    element.textContent,
+    element.getAttribute('aria-label'),
+    element.getAttribute('title')
+  ]
+  const label = candidates
+    .map((value) => (value ?? '').trim().toLowerCase())
+    .find((value) => value.length > 0) ?? ''
   const filters: Record<string, string> = {
     labels: 'l',
     milestones: 'm',
     assignees: 'a',
     author: 'u',
     projects: 'p',
-    sort: 's',
     reviews: 'r'
   }
-  return filters[label] ?? ''
+  const matched = Object.entries(filters).find(
+    ([key]) => label === key || label.includes(key)
+  )
+  return matched ? matched[1] : ''
 }
 
 const isAnnotated = (element: Element): boolean => element.getAttribute(markerAttribute) === '1'
@@ -65,15 +70,15 @@ const createBadge = (doc: Document, text: string): HTMLSpanElement => {
   const badge = doc.createElement('span')
   badge.className = 'ghsk-badge'
   badge.setAttribute('aria-hidden', 'true')
-  text.split('').forEach((ch) => {
-    if (ch === ' ') {
-      return
-    }
-    const key = doc.createElement('span')
-    key.className = 'ghsk-key'
-    key.textContent = ch
-    badge.appendChild(key)
-  })
+  text
+    .split(/\s+/)
+    .filter((token) => token.length > 0)
+    .forEach((token) => {
+      const key = doc.createElement('span')
+      key.className = 'ghsk-key'
+      key.textContent = token
+      badge.appendChild(key)
+    })
   return badge
 }
 
@@ -93,48 +98,102 @@ const annotateElement = (element: Element, doc: Document, options: HotkeyFormatO
   const raw = hotkeyText(element)
   const formatted = raw.length > 0 ? formatHotkey(raw, options) : ''
   const ariaLabel = element.getAttribute('aria-label') ?? ''
-  const isCopyRaw = ariaLabel.toLowerCase().includes('copy raw file')
+  const tooltip = element.getAttribute('data-tooltip') ?? ''
   const keyCount = formatted.split(/\s+/).filter((token) => token.length > 0).length
   const shouldShowPopup = keyCount >= 3
-  const tooltip = element.getAttribute('data-tooltip') ?? ''
+  const isCopyRaw = ariaLabel.toLowerCase().includes('copy raw file')
   const shouldAppendTooltip = formatted.length > 0 && (isCopyRaw || shouldShowPopup)
-  const appendTooltip = (value: string): string => shouldAppendTooltip && value.length > 0 && !value.includes(formatted)
-    ? `${value} (${formatted})`
-    : value
+  const appendTooltip = (value: string): string =>
+    shouldAppendTooltip && value.length > 0 && !value.includes(formatted) ? `${value} (${formatted})` : value
   const updatedLabel = appendTooltip(ariaLabel)
   const updatedTooltip = appendTooltip(tooltip)
-  if (updatedLabel.length > 0) {
-    element.setAttribute('aria-label', updatedLabel)
-  }
-  if (updatedTooltip.length > 0) {
-    element.setAttribute('data-tooltip', updatedTooltip)
-  }
+  const nextLabel = updatedLabel.length > 0 ? updatedLabel : ariaLabel
+  const nextTooltip = updatedTooltip.length > 0 ? updatedTooltip : tooltip
   const badgeCandidate = !shouldShowPopup && formatted.length > 0 && !isAnnotated(element) ? createBadge(doc, formatted) : null
-  const apply = shouldShowPopup
-    ? (): null => {
-      element.setAttribute('data-ghsk-popup', formatted)
-      return null
-    }
-    : (): Element | null => {
-      element.removeAttribute('data-ghsk-popup')
-      const appendedBadge = badgeCandidate === null ? null : element.appendChild(badgeCandidate)
-      return appendedBadge === null ? null : markAnnotated(element)
-    }
+  const apply = formatted.length === 0
+    ? (): void => undefined
+    : shouldShowPopup
+      ? (): null => {
+        element.setAttribute('aria-label', nextLabel)
+        element.setAttribute('data-tooltip', nextTooltip)
+        element.setAttribute('data-ghsk-popup', formatted)
+        return null
+      }
+      : (): Element | null => {
+        element.setAttribute('aria-label', nextLabel)
+        element.setAttribute('data-tooltip', nextTooltip)
+        element.removeAttribute('data-ghsk-popup')
+        const appendedBadge = badgeCandidate === null ? null : element.appendChild(badgeCandidate)
+        return appendedBadge === null ? null : markAnnotated(element)
+      }
   apply()
 }
 
-export const annotateDocument = (doc: Document, settings: AnnotationSettings): void => {
-  const disabled = doc.documentElement.getAttribute('data-ghsk-enabled') === '0'
-  if (disabled) {
-    return
-  }
-  const targets = Array.from(
-    doc.querySelectorAll(
-      `[${hotkeyAttribute}], [${ariaShortcutAttribute}], a[href*="/issues/new"], button`
-    )
-  )
+const targetSelectors = [
+  `[${hotkeyAttribute}]`,
+  `[${ariaShortcutAttribute}]`,
+  'a[href*="/issues/new"]',
+  '[aria-label="Edit mode"] button',
+  '.filters button',
+  '.filters summary',
+  '.table-list-filters a',
+  '.table-list-filters button',
+  '.table-list-filters summary',
+  '.table-list-filters details summary',
+  '.issues-list-options a',
+  '.issues-list-options button',
+  '.issues-list-options summary',
+  '[data-action-bar-item] button',
+  'button[aria-label="Code"]',
+  '[aria-label="Code"]',
+  '.subnav-search-context summary',
+  '.subnav-links button',
+  '.subnav-links summary',
+  'summary[aria-label="Code"]'
+].join(', ')
+
+const uniqueElements = (elements: Element[]): Element[] => {
+  const seen = new Set<Element>()
+  return elements.filter((el) => (seen.has(el) ? false : (seen.add(el), true)))
+}
+
+const annotateTargets = (doc: Document, settings: ResolvedSettings, roots: Element[]): void => {
+  doc.documentElement.setAttribute('data-ghsk-badge-size', settings.badgeSize)
+  const enabled = doc.documentElement.getAttribute('data-ghsk-enabled') !== '0'
   const options: HotkeyFormatOptions = { platform: settings.platform, showAllAlternatives: settings.showAllAlternatives }
-  targets.forEach((element) => {
-    annotateElement(element, doc, options)
+  const scoped = roots.flatMap((root) => {
+    const self = root.matches(targetSelectors) ? [root] : []
+    const descendants = Array.from(root.querySelectorAll(targetSelectors))
+    return [...self, ...descendants]
   })
+  const codeButtons = Array.from(doc.querySelectorAll('button')).filter(
+    (element) => element.textContent.trim().toLowerCase() === 'code'
+  )
+  scoped.push(...codeButtons)
+  const targets = uniqueElements(scoped)
+  const clear = (): void => {
+    targets.forEach((element) => {
+      element.querySelectorAll('.ghsk-badge').forEach((badge) => {
+        badge.remove()
+      })
+      element.removeAttribute(markerAttribute)
+      element.removeAttribute('data-ghsk-popup')
+    })
+  }
+  const apply = enabled
+    ? (): void => {
+      targets.forEach((element) => {
+        annotateElement(element, doc, options)
+      })
+    }
+    : clear
+  apply()
+}
+
+export const annotateDocument = (doc: Document, settings: ResolvedSettings): void => {
+  annotateTargets(doc, settings, [doc.documentElement])
+}
+
+export const annotateWithin = (doc: Document, settings: ResolvedSettings, roots: Element[]): void => {
+  annotateTargets(doc, settings, roots)
 }

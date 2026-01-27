@@ -1,66 +1,81 @@
-interface StorageApi {
-  get: (items: Record<string, unknown>, callback: (items: Record<string, unknown>) => void) => void
-  set: (items: Record<string, unknown>, callback?: () => void) => void
+import { defaultSettings, loadSettings, normalizeSettings, saveSettings, type Settings } from '../shared/settings'
+
+interface Elements {
+  platform: HTMLSelectElement | null
+  showAll: HTMLInputElement | null
+  badgeSize: HTMLSelectElement | null
 }
 
-interface ChromeStorage {
-  local: StorageApi
+const elements: Elements = {
+  platform: document.getElementById('platform') as HTMLSelectElement | null,
+  showAll: document.getElementById('show-all') as HTMLInputElement | null,
+  badgeSize: document.getElementById('badge-size') as HTMLSelectElement | null
 }
 
-interface ChromeHost {
-  storage?: ChromeStorage
+const setPlatform = (value: Settings['platformPreference']): void => {
+  const target = elements.platform
+  switch (target) {
+  case null:
+    break
+  default:
+    target.value = value
+    break
+  }
 }
 
-type PlatformPreference = 'auto' | 'mac' | 'windows' | 'linux'
-
-const isStorageApi = (value: unknown): value is StorageApi => (
-  typeof value === 'object'
-    && value !== null
-    && 'get' in value
-    && 'set' in value
-)
-
-const fallback: PlatformPreference = 'auto'
-
-const resolveStorage = (host: unknown): StorageApi | null => {
-  const chromeHost = typeof host === 'object' && host !== null ? host : null
-  const storageCandidate = chromeHost && 'storage' in chromeHost ? (chromeHost as ChromeHost).storage ?? null : null
-  const localCandidate = storageCandidate && 'local' in storageCandidate ? storageCandidate.local : null
-  return isStorageApi(localCandidate) ? localCandidate : null
+const setShowAll = (value: boolean): void => {
+  const target = elements.showAll
+  switch (target) {
+  case null:
+    break
+  default:
+    target.checked = value
+    break
+  }
 }
 
-const storage = resolveStorage((globalThis as { chrome?: unknown }).chrome)
-const selectElement = document.getElementById('platform') as HTMLSelectElement | null
-
-const applyValue = (element: HTMLSelectElement | null, value: unknown): void => {
-  const resolved = typeof value === 'string' ? value : fallback
-  const setter = element === null
-    ? (): void => { return undefined }
-    : (): void => { element.value = resolved }
-  setter()
+const setBadgeSize = (value: Settings['badgeSize']): void => {
+  const target = elements.badgeSize
+  switch (target) {
+  case null:
+    break
+  default:
+    target.value = value
+    break
+  }
 }
 
-const loadPreference = (element: HTMLSelectElement | null): void => {
-  const task = storage === null
-    ? (): void => { applyValue(element, fallback) }
-    : (): void => { storage.get({ platformPreference: fallback }, (items) => { applyValue(element, items.platformPreference) }) }
-  task()
+const applySettings = (settings: Settings): void => {
+  setPlatform(settings.platformPreference)
+  setShowAll(settings.showAllAlternatives)
+  setBadgeSize(settings.badgeSize)
 }
 
-const persistPreference = (element: HTMLSelectElement | null): void => {
-  const task = storage === null || element === null
-    ? (): void => { return undefined }
-    : (): void => { storage.set({ platformPreference: element.value }) }
-  task()
+const readForm = (): Settings =>
+  normalizeSettings({
+    platformPreference: elements.platform?.value ?? defaultSettings.platformPreference,
+    showAllAlternatives: elements.showAll?.checked ?? defaultSettings.showAllAlternatives,
+    badgeSize: (elements.badgeSize?.value as Settings['badgeSize'] | undefined) ?? defaultSettings.badgeSize
+  })
+
+const handleChange = (): void => {
+  const current = readForm()
+  void saveSettings(current)
 }
 
-const setupSelect = (element: HTMLSelectElement | null): void => {
-  const hydrate = (): void => { loadPreference(element) }
-  const attach = element === null
-    ? (): void => { return undefined }
-    : (): void => { element.addEventListener('change', () => { persistPreference(element) }) }
-  hydrate()
-  attach()
+const bind = (): void => {
+  const attach = (element: HTMLElement | null): void => {
+    element?.addEventListener('change', handleChange)
+  }
+  attach(elements.platform)
+  attach(elements.showAll)
+  attach(elements.badgeSize)
 }
 
-setupSelect(selectElement)
+const init = async (): Promise<void> => {
+  const settings = await loadSettings()
+  applySettings(settings)
+  bind()
+}
+
+void init()

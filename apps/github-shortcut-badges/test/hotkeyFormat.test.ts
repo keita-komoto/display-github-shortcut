@@ -29,4 +29,10 @@ describe('formatHotkey', () => {
     expect(formatHotkey(raw, options('windows', true))).toBe('Ctrl K / Ctrl G')
   })
 
+  it('Alt+Arrow 系は空文字に整形する', () => {
+    expect(formatHotkey('Alt+ArrowUp', options('mac'))).toBe('')
+    expect(formatHotkey('Option+ArrowLeft', options('mac'))).toBe('')
+    expect(formatHotkey('Alt+ArrowRight', options('linux'))).toBe('')
+  })
+
 })
