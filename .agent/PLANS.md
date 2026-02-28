@@ -541,3 +541,85 @@ DOM 注釈については `apps/github-shortcut-badges/src/content/annotate.ts` 
     export const annotateWithin: (doc: Document, settings: ResolvedSettings, roots: Element[]) => void
 
 `annotateDocument` は早期リターンや `if` 文を用いず、式による分岐と純粋関数の合成を基本とします。MutationObserver の設定とバッチ化は `apps/github-shortcut-badges/src/contentScript.ts` に集約し、`annotateDocument` 自体は「与えられた Document を注釈する」責務に集中させます。
+
+
+## Addendum (2026-02-26 JST): ナビメニューのショートカットバッジがメインコンテンツの裏に隠れる不具合修正
+
+
+### Purpose / Big Picture
+
+
+GitHub のナビメニュー領域（リポジトリ上部タブや App Header 周辺）で、ショートカットバッジがメインコンテンツ層の裏側に回り、視認できないケースを解消します。修正後は、ナビメニュー直下に描画されるバッジが常に読める状態を保ち、既存のクリック操作・ツールチップ・レイアウトを阻害しないことを目標にします。
+
+
+### Scope
+
+
+対象はレイヤー順（stacking context / z-index / overflow）に限定し、ホットキー推定ロジックや 3 キー以上のポップアップ方針は変更しません。変更対象は `apps/github-shortcut-badges/src/public/content.css` と `apps/github-shortcut-badges/src/content/annotate.ts`、およびそれらを検証するテストです。
+
+
+### Progress
+
+
+- [ ] (2026-02-26 JST) 失敗する再現テストを先に追加する。`apps/github-shortcut-badges/test/annotate.test.ts` に「ナビメニュー文脈の要素には前面表示用の属性が付与される」期待を追加し、現状失敗を確認する。
+- [ ] (2026-02-26 JST) レイヤー制御を実装する。`apps/github-shortcut-badges/src/content/annotate.ts` にナビメニュー文脈判定を追加し、該当要素へ前面表示用属性（例: `data-ghsk-layer="nav"`）を付与・解除する。
+- [ ] (2026-02-26 JST) `apps/github-shortcut-badges/src/public/content.css` に前面表示用のレイヤースタイルを追加し、通常要素とナビ要素の z-index を分離して管理する（通常表示への影響を最小化）。
+- [ ] (2026-02-26 JST) テストと CI で回帰を確認する。`pnpm --filter github-shortcut-badges run test` と `./ci.sh` を実行し、既存機能（無効化トグル、ポップアップ表示、重複注釈防止）が壊れていないことを確認する。
+- [ ] (2026-02-26 JST) 手動検証を行う。GitHub のリポジトリトップと Issues 画面で、ナビメニュー直下のバッジがメインコンテンツより前面に表示され続けることを目視で確認する。
+
+
+### Milestones
+
+
+マイルストーン 1 は再現固定です。まず「隠れている状態を検知できる実装上の信号」を定義し、ナビメニュー文脈の注釈対象に属性を付与する失敗テストを追加します。この段階では実装を変更せず、テストが赤になることを確認して着手点を固定します。
+
+マイルストーン 2 は実装修正です。`annotate.ts` 側でナビメニュー文脈を判定し、該当要素にだけ前面表示属性を付与します。`content.css` 側ではこの属性に対してのみ z-index を引き上げ、必要最小限の範囲で重なり順を修正します。全バッジ一律の z-index 引き上げは副作用が大きいため避けます。
+
+マイルストーン 3 は検証完了です。ユニットテスト・CI・手動目視の 3 点で受け入れを確認し、問題が再現しないことと、既存機能への副作用がないことを証明します。
+
+
+### Concrete Steps
+
+
+リポジトリルートで現状のテストを実行し、ベースラインを取得します。
+
+    cd /Users/komoto-keita/ghq/github.com/keita-komoto/worktrees/ghsb/release/v1.2
+    pnpm --filter github-shortcut-badges run test
+
+次に、`apps/github-shortcut-badges/test/annotate.test.ts` にナビメニュー文脈の回帰テストを追加します。候補 DOM は GitHub の実画面構造に寄せ、`summary[aria-label="Code"]` や `.subnav-links` 配下要素に対して前面表示属性が付くことを期待値にします。追加直後にテストが失敗することを確認します。
+
+続いて `apps/github-shortcut-badges/src/content/annotate.ts` へ、ナビメニュー文脈判定関数と属性付与ロジックを実装します。無効化時・再注釈時のクリア処理で属性が残留しないことも同時に実装し、属性汚染を防ぎます。
+
+その後 `apps/github-shortcut-badges/src/public/content.css` を更新し、前面表示属性付きの要素・バッジにだけ z-index を上げるスタイルを追加します。通常バッジのスタイルは据え置き、対象外コンポーネントへの副作用を回避します。
+
+最後にテストと CI を再実行します。
+
+    cd /Users/komoto-keita/ghq/github.com/keita-komoto/worktrees/ghsb/release/v1.2
+    pnpm --filter github-shortcut-badges run test
+    ./ci.sh
+
+
+### Validation and Acceptance
+
+
+受け入れ条件は次の 3 点です。1 点目は自動検証で、`pnpm --filter github-shortcut-badges run test` と `./ci.sh` が成功すること。2 点目は表示検証で、GitHub のナビメニュー下に表示されるショートカットバッジがメインコンテンツの裏へ潜らないこと。3 点目は非回帰検証で、トグル OFF 時の非表示、3 キー以上のポップアップ表示、既存ツールチップ追記が従来どおり動くことです。
+
+
+### Decision Log
+
+
+- Decision: 今回は「全バッジ一律 z-index 上げ」ではなく「ナビメニュー文脈だけを前面化する属性ベース制御」を採用する。
+  Rationale: 一律引き上げはモーダル・ドロップダウン・ツールチップなど他 UI との重なり競合を増やすため。問題が起きる文脈に限定して制御する方が安全で、回帰範囲を狭くできる。
+  Date/Author: 2026-02-26 JST / assistant
+
+
+### Surprises & Discoveries
+
+
+- (2026-02-26 JST) 追加予定: 実装時に判明した GitHub 側の stacking context（具体セレクタ、overflow/z-index の組み合わせ）と回避策を記録する。
+
+
+### Outcomes & Retrospective
+
+
+- (2026-02-26 JST) 追加予定: 実装完了後に、修正結果・未解決事項・今後の監視ポイントを記録する。
