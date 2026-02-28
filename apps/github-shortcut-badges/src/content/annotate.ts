@@ -94,39 +94,72 @@ const hotkeyText = (element: Element): string => {
   return first ?? ''
 }
 
+const updateTooltipAttributes = (
+  element: Element,
+  nextAriaLabel: string,
+  nextTooltip: string,
+  hasAriaLabel: boolean,
+  hasTooltip: boolean
+): void => {
+  const updates = [
+    { name: 'aria-label', value: nextAriaLabel, shouldApply: hasAriaLabel },
+    { name: 'data-tooltip', value: nextTooltip, shouldApply: hasTooltip }
+  ]
+  updates.forEach(({ name, value, shouldApply }) => {
+    const apply = shouldApply
+      ? (): void => {
+        element.setAttribute(name, value)
+      }
+      : (): void => undefined
+    apply()
+  })
+}
+
 const annotateElement = (element: Element, doc: Document, options: HotkeyFormatOptions): void => {
   const raw = hotkeyText(element)
   const formatted = raw.length > 0 ? formatHotkey(raw, options) : ''
-  const ariaLabel = element.getAttribute('aria-label') ?? ''
-  const tooltip = element.getAttribute('data-tooltip') ?? ''
+  const ariaLabelAttr = element.getAttribute('aria-label')
+  const tooltipAttr = element.getAttribute('data-tooltip')
+  const hasAriaLabel = ariaLabelAttr !== null
+  const hasTooltip = tooltipAttr !== null
+  const ariaLabel = ariaLabelAttr ?? ''
+  const tooltip = tooltipAttr ?? ''
   const keyCount = formatted.split(/\s+/).filter((token) => token.length > 0).length
   const shouldShowPopup = keyCount >= 3
   const isCopyRaw = ariaLabel.toLowerCase().includes('copy raw file')
   const shouldAppendTooltip = formatted.length > 0 && (isCopyRaw || shouldShowPopup)
   const appendTooltip = (value: string): string =>
     shouldAppendTooltip && value.length > 0 && !value.includes(formatted) ? `${value} (${formatted})` : value
-  const updatedLabel = appendTooltip(ariaLabel)
-  const updatedTooltip = appendTooltip(tooltip)
-  const nextLabel = updatedLabel.length > 0 ? updatedLabel : ariaLabel
-  const nextTooltip = updatedTooltip.length > 0 ? updatedTooltip : tooltip
+  const nextLabel = appendTooltip(ariaLabel)
+  const nextTooltip = appendTooltip(tooltip)
   const badgeCandidate = !shouldShowPopup && formatted.length > 0 && !isAnnotated(element) ? createBadge(doc, formatted) : null
   const apply = formatted.length === 0
     ? (): void => undefined
     : shouldShowPopup
       ? (): null => {
-        element.setAttribute('aria-label', nextLabel)
-        element.setAttribute('data-tooltip', nextTooltip)
+        updateTooltipAttributes(element, nextLabel, nextTooltip, hasAriaLabel, hasTooltip)
         element.setAttribute('data-ghsk-popup', formatted)
         return null
       }
       : (): Element | null => {
-        element.setAttribute('aria-label', nextLabel)
-        element.setAttribute('data-tooltip', nextTooltip)
+        updateTooltipAttributes(element, nextLabel, nextTooltip, hasAriaLabel, hasTooltip)
         element.removeAttribute('data-ghsk-popup')
         const appendedBadge = badgeCandidate === null ? null : element.appendChild(badgeCandidate)
         return appendedBadge === null ? null : markAnnotated(element)
       }
   apply()
+}
+
+const clearDocumentAnnotations = (doc: Document): void => {
+  doc.querySelectorAll('.ghsk-badge').forEach((badge) => {
+    badge.remove()
+  })
+  doc.querySelectorAll(`[${markerAttribute}]`).forEach((element) => {
+    element.removeAttribute(markerAttribute)
+  })
+  doc.querySelectorAll('[data-ghsk-popup]').forEach((element) => {
+    element.removeAttribute('data-ghsk-popup')
+  })
 }
 
 const targetSelectors = [
@@ -172,13 +205,7 @@ const annotateTargets = (doc: Document, settings: ResolvedSettings, roots: Eleme
   scoped.push(...codeButtons)
   const targets = uniqueElements(scoped)
   const clear = (): void => {
-    targets.forEach((element) => {
-      element.querySelectorAll('.ghsk-badge').forEach((badge) => {
-        badge.remove()
-      })
-      element.removeAttribute(markerAttribute)
-      element.removeAttribute('data-ghsk-popup')
-    })
+    clearDocumentAnnotations(doc)
   }
   const apply = enabled
     ? (): void => {
