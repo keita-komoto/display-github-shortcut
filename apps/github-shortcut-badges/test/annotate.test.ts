@@ -65,6 +65,16 @@ describe('annotateDocument', () => {
     expect(badge?.textContent).toBe('GC')
   })
 
+  it('既存 aria-label/data-tooltip が無い要素には空文字属性を追加しない', () => {
+    const doc = buildDocument('<a data-hotkey="g c">Issues</a>')
+    const target = doc.querySelector('a')
+
+    annotateDocument(doc, settings('linux'))
+
+    expect(target?.hasAttribute('aria-label')).toBe(false)
+    expect(target?.hasAttribute('data-tooltip')).toBe(false)
+  })
+
   it('Edit mode の Preview ボタンに Mod+Shift+P を付与する（3キーなのでポップアップ）', () => {
     const doc = buildDocument(`
       <ul aria-label="Edit mode">
@@ -255,5 +265,21 @@ describe('annotateDocument', () => {
     expect(target?.querySelector('.ghsk-badge')).toBeNull()
     expect(target?.getAttribute('data-ghsk-popup')).toBeNull()
     expect(target?.getAttribute('data-ghsk-annotated')).toBeNull()
+  })
+
+  it('無効化時に注釈対象から外れた要素の既存バッジも除去する', () => {
+    const doc = buildDocument('<a data-hotkey="g c">Issues</a>')
+    const target = doc.querySelector('a')
+
+    annotateDocument(doc, settings('linux'))
+    expect(target?.querySelector('.ghsk-badge')).not.toBeNull()
+
+    target?.removeAttribute('data-hotkey')
+    doc.documentElement.setAttribute('data-ghsk-enabled', '0')
+    annotateDocument(doc, settings('linux'))
+
+    expect(target?.querySelector('.ghsk-badge')).toBeNull()
+    expect(target?.getAttribute('data-ghsk-annotated')).toBeNull()
+    expect(target?.getAttribute('data-ghsk-popup')).toBeNull()
   })
 })
