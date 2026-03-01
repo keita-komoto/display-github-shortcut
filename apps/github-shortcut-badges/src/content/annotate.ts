@@ -4,6 +4,44 @@ import type { ResolvedSettings } from '../shared/settings'
 const markerAttribute = 'data-ghsk-annotated'
 const hotkeyAttribute = 'data-hotkey'
 const ariaShortcutAttribute = 'aria-keyshortcuts'
+const layerAttribute = 'data-ghsk-layer'
+const navLayerValue = 'nav'
+const navAncestorAttribute = 'data-ghsk-nav-ancestor'
+
+const navContextSelectors = [
+  '.AppHeader-localBar',
+  '.AppHeader-globalBar',
+  '.AppHeader-context',
+  '.UnderlineNav',
+  '.UnderlineNav-body',
+  '.subnav',
+  '.subnav-links',
+  '.js-repo-nav',
+  '#repository-container-header',
+  'header[role="banner"]',
+  'nav[aria-label*="Repository"]'
+].join(', ')
+
+const navHotkeySelectors = [
+  'summary[aria-label="Code"]',
+  'button[aria-label="Code"]',
+  '[aria-label="Code"]'
+].join(', ')
+
+const navAncestorSelectors = [
+  '.AppHeader',
+  '.AppHeader-globalBar',
+  '.AppHeader-localBar',
+  '.AppHeader-context',
+  '.UnderlineNav',
+  '.UnderlineNav-body',
+  '.subnav',
+  '.subnav-links',
+  '.js-repo-nav',
+  '#repository-container-header',
+  'header[role="banner"]',
+  'nav'
+].join(', ')
 
 const resolveKnownHotkey = (element: Element): string => {
   const ariaAttr = element.getAttribute('aria-label')
@@ -64,6 +102,41 @@ const isAnnotated = (element: Element): boolean => element.getAttribute(markerAt
 const markAnnotated = (element: Element): Element => {
   element.setAttribute(markerAttribute, '1')
   return element
+}
+
+const updateLayerAttribute = (element: Element, shouldRaise: boolean): void => {
+  const update = shouldRaise
+    ? (): void => {
+      element.setAttribute(layerAttribute, navLayerValue)
+    }
+    : (): void => {
+      element.removeAttribute(layerAttribute)
+    }
+  update()
+}
+
+const isNavContextElement = (element: Element): boolean => {
+  const inNavContainer = element.closest(navContextSelectors) !== null
+  const isNavHotkey = element.matches(navHotkeySelectors)
+  const hasHeaderAncestor = element.closest('header, nav, #repository-container-header') !== null
+  return inNavContainer || (isNavHotkey && hasHeaderAncestor)
+}
+
+const markNavAncestors = (element: Element): void => {
+  let current = element.parentElement
+  let depth = 0
+  while (current !== null && depth < 16) {
+    const shouldMark = current.matches(navAncestorSelectors)
+    const apply = shouldMark
+      ? (): void => {
+        current?.setAttribute(navAncestorAttribute, '1')
+      }
+      : (): void => undefined
+    apply()
+    const shouldStop = current.matches('header[role="banner"], #repository-container-header')
+    current = shouldStop ? null : current.parentElement
+    depth += 1
+  }
 }
 
 const createBadge = (doc: Document, text: string): HTMLSpanElement => {
@@ -128,22 +201,40 @@ const annotateElement = (element: Element, doc: Document, options: HotkeyFormatO
   const shouldShowPopup = keyCount >= 3
   const isCopyRaw = ariaLabel.toLowerCase().includes('copy raw file')
   const shouldAppendTooltip = formatted.length > 0 && (isCopyRaw || shouldShowPopup)
+  const shouldRaiseLayer = formatted.length > 0 && isNavContextElement(element)
   const appendTooltip = (value: string): string =>
     shouldAppendTooltip && value.length > 0 && !value.includes(formatted) ? `${value} (${formatted})` : value
   const nextLabel = appendTooltip(ariaLabel)
   const nextTooltip = appendTooltip(tooltip)
   const badgeCandidate = !shouldShowPopup && formatted.length > 0 && !isAnnotated(element) ? createBadge(doc, formatted) : null
   const apply = formatted.length === 0
-    ? (): void => undefined
+    ? (): void => {
+      element.removeAttribute('data-ghsk-popup')
+      updateLayerAttribute(element, false)
+    }
     : shouldShowPopup
       ? (): null => {
         updateTooltipAttributes(element, nextLabel, nextTooltip, hasAriaLabel, hasTooltip)
         element.setAttribute('data-ghsk-popup', formatted)
+        updateLayerAttribute(element, shouldRaiseLayer)
+        const mark = shouldRaiseLayer
+          ? (): void => {
+            markNavAncestors(element)
+          }
+          : (): void => undefined
+        mark()
         return null
       }
       : (): Element | null => {
         updateTooltipAttributes(element, nextLabel, nextTooltip, hasAriaLabel, hasTooltip)
         element.removeAttribute('data-ghsk-popup')
+        updateLayerAttribute(element, shouldRaiseLayer)
+        const mark = shouldRaiseLayer
+          ? (): void => {
+            markNavAncestors(element)
+          }
+          : (): void => undefined
+        mark()
         const appendedBadge = badgeCandidate === null ? null : element.appendChild(badgeCandidate)
         return appendedBadge === null ? null : markAnnotated(element)
       }
@@ -159,6 +250,12 @@ const clearDocumentAnnotations = (doc: Document): void => {
   })
   doc.querySelectorAll('[data-ghsk-popup]').forEach((element) => {
     element.removeAttribute('data-ghsk-popup')
+  })
+  doc.querySelectorAll(`[${layerAttribute}]`).forEach((element) => {
+    element.removeAttribute(layerAttribute)
+  })
+  doc.querySelectorAll(`[${navAncestorAttribute}]`).forEach((element) => {
+    element.removeAttribute(navAncestorAttribute)
   })
 }
 

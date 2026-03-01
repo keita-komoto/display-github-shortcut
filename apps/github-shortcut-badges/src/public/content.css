@@ -33,6 +33,16 @@
   overflow: visible !important;
 }
 
+[data-ghsk-layer="nav"] {
+  position: relative;
+  z-index: 40;
+  overflow: visible !important;
+}
+
+[data-ghsk-layer="nav"] .ghsk-badge {
+  z-index: 80;
+}
+
 html[data-ghsk-enabled="0"] .ghsk-badge {
   display: none !important;
 }
@@ -56,6 +66,19 @@ html:not([data-ghsk-enabled="0"]) [data-ghsk-popup]:not([data-tooltip]):hover::a
   white-space: nowrap;
   z-index: 2;
   pointer-events: none;
+}
+
+html:not([data-ghsk-enabled="0"]) [data-ghsk-layer="nav"][data-ghsk-popup]:not([data-tooltip]):hover::after {
+  z-index: 81;
+}
+
+[data-ghsk-nav-ancestor="1"] {
+  overflow: visible !important;
+}
+
+[data-ghsk-nav-ancestor="1"] {
+  position: relative;
+  z-index: 30;
 }
 
 .ghsk-badge {

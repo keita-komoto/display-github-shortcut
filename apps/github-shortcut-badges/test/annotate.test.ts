@@ -205,6 +205,36 @@ describe('annotateDocument', () => {
     expect(badge?.textContent).toBe('>')
   })
 
+  it('ナビメニュー文脈の Code summary には前面表示レイヤー属性を付与する', () => {
+    const doc = buildDocument(`
+      <div class="AppHeader-localBar">
+        <summary aria-label="Code">Code</summary>
+      </div>
+    `)
+    const target = doc.querySelector('summary')
+
+    annotateDocument(doc, settings('mac'))
+
+    expect(target?.getAttribute('data-ghsk-layer')).toBe('nav')
+  })
+
+  it('ナビメニュー文脈では祖先にも overflow 修正属性を付与する', () => {
+    const doc = buildDocument(`
+      <header role="banner">
+        <div class="AppHeader-globalBar">
+          <a aria-label="Code">Code</a>
+        </div>
+      </header>
+    `)
+    const header = doc.querySelector('header')
+    const globalBar = doc.querySelector('.AppHeader-globalBar')
+
+    annotateDocument(doc, settings('mac'))
+
+    expect(header?.getAttribute('data-ghsk-nav-ancestor')).toBe('1')
+    expect(globalBar?.getAttribute('data-ghsk-nav-ancestor')).toBe('1')
+  })
+
   it('Code ボタン (aria-label="Code") に > を付与する', () => {
     const doc = buildDocument('<button aria-label="Code" type="button">Code</button>')
     const target = doc.querySelector('button')
@@ -281,5 +311,44 @@ describe('annotateDocument', () => {
     expect(target?.querySelector('.ghsk-badge')).toBeNull()
     expect(target?.getAttribute('data-ghsk-annotated')).toBeNull()
     expect(target?.getAttribute('data-ghsk-popup')).toBeNull()
+  })
+
+  it('無効化時にナビ向けレイヤー属性も除去する', () => {
+    const doc = buildDocument(`
+      <div class="subnav-links">
+        <summary aria-label="Code">Code</summary>
+      </div>
+    `)
+    const target = doc.querySelector('summary')
+
+    annotateDocument(doc, settings('mac'))
+    expect(target?.getAttribute('data-ghsk-layer')).toBe('nav')
+
+    doc.documentElement.setAttribute('data-ghsk-enabled', '0')
+    annotateDocument(doc, settings('mac'))
+
+    expect(target?.getAttribute('data-ghsk-layer')).toBeNull()
+  })
+
+  it('無効化時にナビ祖先の overflow 修正属性も除去する', () => {
+    const doc = buildDocument(`
+      <header role="banner">
+        <div class="AppHeader-globalBar">
+          <a aria-label="Code">Code</a>
+        </div>
+      </header>
+    `)
+    const header = doc.querySelector('header')
+    const globalBar = doc.querySelector('.AppHeader-globalBar')
+
+    annotateDocument(doc, settings('mac'))
+    expect(header?.getAttribute('data-ghsk-nav-ancestor')).toBe('1')
+    expect(globalBar?.getAttribute('data-ghsk-nav-ancestor')).toBe('1')
+
+    doc.documentElement.setAttribute('data-ghsk-enabled', '0')
+    annotateDocument(doc, settings('mac'))
+
+    expect(header?.getAttribute('data-ghsk-nav-ancestor')).toBeNull()
+    expect(globalBar?.getAttribute('data-ghsk-nav-ancestor')).toBeNull()
   })
 })
